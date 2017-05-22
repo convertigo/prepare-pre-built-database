@@ -31,53 +31,53 @@ public class PrepareCBLDatabase {
 
 	Manager 		manager;
 	Database 		db;
-	static String	database_name = "manydocs";		
-	
-	public static void main(String[] args) throws IOException, CouchbaseLiteException {
-		List<String> argsList  = new ArrayList<String>();  
-	    List<String> optsList  = new ArrayList<String>();
-	    List<String> doubleOptsList  = new ArrayList<String>();
+	static String	database_name = "manydocs";
 
-    	System.out.println("PreparePreBuiltDatabase tool v1.0 (c) 2017 Convertigo");
-	    
-	    if (args.length != 0) {
-	    	
-	    	/*
-	    	 * Not used for the moment....
-	    	 */
-		    for (int i=0; i < args.length; i++) {
-		         switch (args[i].charAt(0)) {
-			         case '-':
-			             if (args[i].charAt(1) == '-') {
-			                 int len = 0;
-			                 String argstring = args[i].toString();
-			                 len = argstring.length();
-			                 System.out.println("Found double dash with command " + argstring.substring(2, len) );
-			                 doubleOptsList.add(argstring.substring(2, len));           
-			             } else {
-			                 System.out.println("Found dash with command " + args[i].charAt(1) + " and value " + args[i+1] );   
-			                 i= i+1;
-			                 optsList.add(args[i]);      
-			             }           
-			         break;         
-		         default:            
-			         argsList.add(args[i]);
-			         break;         
-		         }     
-		    }
+	public static void main(String[] args) throws IOException, CouchbaseLiteException {
+		List<String> argsList = new ArrayList<String>();
+		List<String> optsList = new ArrayList<String>();
+		List<String> doubleOptsList = new ArrayList<String>();
+
+		System.out.println("PreparePreBuiltDatabase tool v1.0 (c) 2017 Convertigo");
+
+		if (args.length != 0) {
+
+			/*
+			 * Not used for the moment
+			 */
+			for (int i = 0; i < args.length; i++) {
+				switch (args[i].charAt(0)) {
+				case '-':
+					if (args[i].charAt(1) == '-') {
+						int len = 0;
+						String argstring = args[i].toString();
+						len = argstring.length();
+						System.out.println("Found double dash with command " + argstring.substring(2, len) );
+						doubleOptsList.add(argstring.substring(2, len));   
+					} else {
+						System.out.println("Found dash with command " + args[i].charAt(1) + " and value " + args[i+1] );   
+						i= i+1;
+						optsList.add(args[i]);  
+					}
+					break;
+				default:
+					argsList.add(args[i]);
+					break;
+				} 
+			}
 			PrepareCBLDatabase me = new PrepareCBLDatabase();
 			database_name = args[1];
 			me.openDatabase();
 			me.replicate(args[0]);
-	    } else {
-	    	System.out.println("This tool will prepare a prebuilt mobile fullsync database you will be able to embded in your mobile apps ");
-	    	System.out.println("Or bulk donwnload when you mobile application is started.");
-	    	System.out.println("");
-	        System.out.println("Usage: PreparePreBuiltDatabase Convertigo_server_endpoint fullsync_database_name ex :");
-	        System.out.println("       PreparePreBuiltDatabase http://my.convertigo.server.com:18080/convertigo  myfullsyncdatabase");
-	    	System.out.println("");
-	    	System.out.println("The prebuilt database will be created in the current directory.");
-	    }
+		} else {
+			System.out.println("This tool will prepare a prebuilt mobile fullsync database you will be able to embed in your mobile apps ");
+			System.out.println("Or bulk download when you mobile application is started.");
+			System.out.println("");
+			System.out.println("Usage: PreparePreBuiltDatabase Convertigo_server_endpoint fullsync_database_name ex :");
+			System.out.println("   PreparePreBuiltDatabase http://my.convertigo.server.com:28080/convertigo  myfullsyncdatabase");
+			System.out.println("");
+			System.out.println("The prebuilt database will be created in the current directory.");
+		}
 	}
 
 	/**
@@ -93,7 +93,7 @@ public class PrepareCBLDatabase {
 		System.out.println("Database technology used : ");
 		db = manager.getDatabase(database_name + "_device");
 	}
-	
+
 	/**
 	 * Replicate the data base from the server..
 	 * 
@@ -104,32 +104,32 @@ public class PrepareCBLDatabase {
 		URL url = new URL(surl + "/fullsync/" + database_name +"/");
 		Replication pull = db.createPullReplication(url);
 		pull.setContinuous(false);
-		
+
 		/*
 		Authenticator  auth = new BasicAuthenticator("","");
 		pull.setAuthenticator(auth);
-		*/
-		
+		 */
+
 		pull.addChangeListener(new Replication.ChangeListener() {
-		    @Override
-		    public void changed(Replication.ChangeEvent event) {
-		        // will be called back when the pull replication status changes
-		    	System.out.print("Replicated : " + event.getCompletedChangeCount() + " Status : " + event.getStatus() + "\r");
-		    	if (event.getStatus() ==  ReplicationStatus.REPLICATION_STOPPED) {
-		    		System.out.print("\n");
-		    		System.out.print("Zipping database ...");
-		    		zipDir(Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + "_device.cblite2"),
-		    			   Paths.get("./" + database_name + "_device.cblite2.zip"));
-		    		System.out.println(", Database zip has been created in : " + database_name + "_device.cblite2.zip");
-		    		System.out.println("");
-		    		System.out.println("Copy this file to a repository accessed by an HTTP server, For example copy the file in a convertigo projet and");
-		    		System.out.println("Deploy the project on a Convertigo server.");
-		    	}
-		    }
+			@Override
+			public void changed(Replication.ChangeEvent event) {
+				// will be called back when the pull replication status changes
+				System.out.print("Replicated : " + event.getCompletedChangeCount() + " Status : " + event.getStatus() + "\r");
+				if (event.getStatus() ==  ReplicationStatus.REPLICATION_STOPPED) {
+					System.out.print("\n");
+					System.out.print("Zipping database ...");
+					zipDir(Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + "_device.cblite2"),
+							Paths.get("./" + database_name + "_device.cblite2.zip"));
+					System.out.println(", Database zip has been created in : " + database_name + "_device.cblite2.zip");
+					System.out.println("");
+					System.out.println("Copy this file to a repository accessed by an HTTP server, For example copy the file in a convertigo projet and");
+					System.out.println("Deploy the project on a Convertigo server.");
+				}
+			}
 		});
 		pull.start();
 	}
-	
+
 	/**
 	 * Zip the database directory ton one Zip File
 	 * 
@@ -137,50 +137,50 @@ public class PrepareCBLDatabase {
 	 * @param out
 	 */
 	public static void zipDir(final Path dirToZip, final Path out) {
-	    final Stack<String> stackOfDirs = new Stack<>();
-	    final Function<Stack<String>, String> createPath = stack -> stack.stream().collect(Collectors.joining("/")) + "/";
-	    try(final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(out.toFile()))) {
-	        Files.walkFileTree(dirToZip, new FileVisitor<Path>() {
+		final Stack<String> stackOfDirs = new Stack<>();
+		final Function<Stack<String>, String> createPath = stack -> stack.stream().collect(Collectors.joining("/")) + "/";
+		try(final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(out.toFile()))) {
+			Files.walkFileTree(dirToZip, new FileVisitor<Path>() {
 
-	            @Override
-	            public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) throws IOException {
-	                stackOfDirs.push(dir.toFile().getName());
-	                final String path = createPath.apply(stackOfDirs);
-	                final ZipEntry zipEntry = new ZipEntry(path);
-	                zipOut.putNextEntry(zipEntry);
-	                return FileVisitResult.CONTINUE;
-	            }
+				@Override
+				public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) throws IOException {
+					stackOfDirs.push(dir.toFile().getName());
+					final String path = createPath.apply(stackOfDirs);
+					final ZipEntry zipEntry = new ZipEntry(path);
+					zipOut.putNextEntry(zipEntry);
+					return FileVisitResult.CONTINUE;
+				}
 
-	            @Override
-	            public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
-	                final String path = String.format("%s%s", createPath.apply(stackOfDirs), file.toFile().getName());
-	                final ZipEntry zipEntry = new ZipEntry(path);
-	                zipOut.putNextEntry(zipEntry);
-	                Files.copy(file, zipOut);
-	                zipOut.closeEntry();
-	                return FileVisitResult.CONTINUE;
-	            }
+				@Override
+				public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
+					final String path = String.format("%s%s", createPath.apply(stackOfDirs), file.toFile().getName());
+					final ZipEntry zipEntry = new ZipEntry(path);
+					zipOut.putNextEntry(zipEntry);
+					Files.copy(file, zipOut);
+					zipOut.closeEntry();
+					return FileVisitResult.CONTINUE;
+				}
 
-	            @Override
-	            public FileVisitResult visitFileFailed(final Path file, final IOException exc) throws IOException {
-	                final StringWriter stringWriter = new StringWriter();
-	                try(final PrintWriter printWriter = new PrintWriter(stringWriter)) {
-	                    exc.printStackTrace(printWriter);
-	                    System.err.printf("Failed visiting %s because of:\n %s\n",
-	                            file.toFile().getAbsolutePath(), printWriter.toString());
-	                }
-	                return FileVisitResult.CONTINUE;
-	            }
+				@Override
+				public FileVisitResult visitFileFailed(final Path file, final IOException exc) throws IOException {
+					final StringWriter stringWriter = new StringWriter();
+					try(final PrintWriter printWriter = new PrintWriter(stringWriter)) {
+						exc.printStackTrace(printWriter);
+						System.err.printf("Failed visiting %s because of:\n %s\n",
+								file.toFile().getAbsolutePath(), printWriter.toString());
+					}
+					return FileVisitResult.CONTINUE;
+				}
 
-	            @Override
-	            public FileVisitResult postVisitDirectory(final Path dir, final IOException exc) throws IOException {
-	                stackOfDirs.pop();
-	                return FileVisitResult.CONTINUE;
-	            }
-	        });
-	    } catch (IOException e) {
-	        e.printStackTrace();
-	    }
+				@Override
+				public FileVisitResult postVisitDirectory(final Path dir, final IOException exc) throws IOException {
+					stackOfDirs.pop();
+					return FileVisitResult.CONTINUE;
+				}
+			});
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 
 }
