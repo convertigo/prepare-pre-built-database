@@ -26,12 +26,13 @@ import com.couchbase.lite.JavaContext;
 import com.couchbase.lite.Manager;
 import com.couchbase.lite.replicator.Replication;
 import com.couchbase.lite.replicator.Replication.ReplicationStatus;
+import com.couchbase.lite.store.SQLiteStore;
 
 public class PrepareCBLDatabase {
 
-	Manager 		manager;
-	Database 		db;
-	static String	database_name = "manydocs";
+	Manager manager;
+	Database db;
+	static String database_name = "manydocs";
 
 	public static void main(String[] args) throws IOException, CouchbaseLiteException {
 		List<String> argsList = new ArrayList<String>();
@@ -40,7 +41,7 @@ public class PrepareCBLDatabase {
 
 		System.out.println("PreparePreBuiltDatabase tool v1.0 (c) 2017 Convertigo");
 
-		if (args.length != 0) {
+		if (args.length == 2) {
 
 			/*
 			 * Not used for the moment
@@ -104,7 +105,7 @@ public class PrepareCBLDatabase {
 		URL url = new URL(surl + "/fullsync/" + database_name +"/");
 		Replication pull = db.createPullReplication(url);
 		pull.setContinuous(false);
-
+		
 		/*
 		Authenticator  auth = new BasicAuthenticator("","");
 		pull.setAuthenticator(auth);
@@ -116,14 +117,23 @@ public class PrepareCBLDatabase {
 				// will be called back when the pull replication status changes
 				System.out.print("Replicated : " + event.getCompletedChangeCount() + " Status : " + event.getStatus() + "\r");
 				if (event.getStatus() ==  ReplicationStatus.REPLICATION_STOPPED) {
-					System.out.print("\n");
-					System.out.print("Zipping database ...");
-					zipDir(Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + "_device.cblite2"),
-							Paths.get("./" + database_name + "_device.cblite2.zip"));
-					System.out.println(", Database zip has been created in : " + database_name + "_device.cblite2.zip");
-					System.out.println("");
-					System.out.println("Copy this file to a repository accessed by an HTTP server, For example copy the file in a convertigo projet and");
-					System.out.println("Deploy the project on a Convertigo server.");
+					try {
+						Path cbldir = Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + "_device.cblite2").toAbsolutePath();
+						SQLiteStore store = new SQLiteStore(cbldir.toString(), manager, db);
+						store.open();
+						String rev = store.getInfo("checkpoint/" + pull.remoteCheckpointDocID());
+						store.setInfo("prebuiltrevision", rev);
+						store.close();
+						System.out.print("\nZipping database ...");
+						zipDir(cbldir, Paths.get("./" + database_name + "_device.cblite2.zip"));
+						System.out.println(", Database zip has been created in : " + database_name + "_device.cblite2.zip");
+						System.out.println("");
+						System.out.println("Copy this file to a repository accessed by an HTTP server, For example copy the file in a convertigo projet and");
+						System.out.println("Deploy the project on a Convertigo server.");
+					} catch (Exception e) {
+						System.err.println("Failed to replicate and prepare the zip file.");
+						e.printStackTrace();
+					}
 				}
 			}
 		});
@@ -139,7 +149,7 @@ public class PrepareCBLDatabase {
 	public static void zipDir(final Path dirToZip, final Path out) {
 		final Stack<String> stackOfDirs = new Stack<>();
 		final Function<Stack<String>, String> createPath = stack -> stack.stream().collect(Collectors.joining("/")) + "/";
-		try(final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(out.toFile()))) {
+		try (final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(out.toFile()))) {
 			Files.walkFileTree(dirToZip, new FileVisitor<Path>() {
 
 				@Override
@@ -164,7 +174,7 @@ public class PrepareCBLDatabase {
 				@Override
 				public FileVisitResult visitFileFailed(final Path file, final IOException exc) throws IOException {
 					final StringWriter stringWriter = new StringWriter();
-					try(final PrintWriter printWriter = new PrintWriter(stringWriter)) {
+					try (final PrintWriter printWriter = new PrintWriter(stringWriter)) {
 						exc.printStackTrace(printWriter);
 						System.err.printf("Failed visiting %s because of:\n %s\n",
 								file.toFile().getAbsolutePath(), printWriter.toString());
