@@ -122,7 +122,7 @@ public class PrepareCBLDatabase {
 						store.close();
 						System.out.print("\nZipping database ...");
 						zipDir(cbldir, zipPath);
-						System.out.println(", Database zip has been created in : " + database_name + ".cblite2.zip");
+						System.out.println(", Database zip has been created in : " + zipPath);
 						System.out.println("");
 						System.out.println("Copy this file to a repository accessed by an HTTP server, For example copy the file in a convertigo projet and");
 						System.out.println("Deploy the project on a Convertigo server.");
