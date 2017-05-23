@@ -2,21 +2,16 @@ package com.twinsoft.convertigo.util;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.FileVisitResult;
-import java.nio.file.FileVisitor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Stack;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -41,7 +36,7 @@ public class PrepareCBLDatabase {
 
 		System.out.println("PreparePreBuiltDatabase tool v1.0 (c) 2017 Convertigo");
 
-		if (args.length == 2) {
+		if (args.length >= 2) {
 
 			/*
 			 * Not used for the moment
@@ -69,13 +64,14 @@ public class PrepareCBLDatabase {
 			PrepareCBLDatabase me = new PrepareCBLDatabase();
 			database_name = args[1];
 			me.openDatabase();
-			me.replicate(args[0]);
+			Path zipPath = Paths.get(args.length >= 3 ? args[2] : "./fs." + database_name + ".zip");
+			me.replicate(args[0], zipPath);
 		} else {
 			System.out.println("This tool will prepare a prebuilt mobile fullsync database you will be able to embed in your mobile apps ");
 			System.out.println("Or bulk download when you mobile application is started.");
 			System.out.println("");
 			System.out.println("Usage: PreparePreBuiltDatabase Convertigo_server_endpoint fullsync_database_name ex :");
-			System.out.println("   PreparePreBuiltDatabase http://my.convertigo.server.com:28080/convertigo  myfullsyncdatabase");
+			System.out.println("   PreparePreBuiltDatabase http://my.convertigo.server.com:28080/convertigo  myfullsyncdatabase [prebuiltdatabase.zip]");
 			System.out.println("");
 			System.out.println("The prebuilt database will be created in the current directory.");
 		}
@@ -92,7 +88,7 @@ public class PrepareCBLDatabase {
 		manager = new Manager(context, Manager.DEFAULT_OPTIONS);
 		manager.setStorageType("SQLite");
 		System.out.println("Database technology used : ");
-		db = manager.getDatabase(database_name + "_device");
+		db = manager.getDatabase(database_name);
 	}
 
 	/**
@@ -101,7 +97,7 @@ public class PrepareCBLDatabase {
 	 * @param surl
 	 * @throws MalformedURLException
 	 */
-	void replicate(String surl) throws MalformedURLException {
+	void replicate(String surl, Path zipPath) throws MalformedURLException {
 		URL url = new URL(surl + "/fullsync/" + database_name +"/");
 		Replication pull = db.createPullReplication(url);
 		pull.setContinuous(false);
@@ -118,15 +114,15 @@ public class PrepareCBLDatabase {
 				System.out.print("Replicated : " + event.getCompletedChangeCount() + " Status : " + event.getStatus() + "\r");
 				if (event.getStatus() ==  ReplicationStatus.REPLICATION_STOPPED) {
 					try {
-						Path cbldir = Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + "_device.cblite2").toAbsolutePath();
+						Path cbldir = Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + ".cblite2").toAbsolutePath();
 						SQLiteStore store = new SQLiteStore(cbldir.toString(), manager, db);
 						store.open();
 						String rev = store.getInfo("checkpoint/" + pull.remoteCheckpointDocID());
 						store.setInfo("prebuiltrevision", rev);
 						store.close();
 						System.out.print("\nZipping database ...");
-						zipDir(cbldir, Paths.get("./" + database_name + "_device.cblite2.zip"));
-						System.out.println(", Database zip has been created in : " + database_name + "_device.cblite2.zip");
+						zipDir(cbldir, zipPath);
+						System.out.println(", Database zip has been created in : " + database_name + ".cblite2.zip");
 						System.out.println("");
 						System.out.println("Copy this file to a repository accessed by an HTTP server, For example copy the file in a convertigo projet and");
 						System.out.println("Deploy the project on a Convertigo server.");
@@ -147,44 +143,19 @@ public class PrepareCBLDatabase {
 	 * @param out
 	 */
 	public static void zipDir(final Path dirToZip, final Path out) {
-		final Stack<String> stackOfDirs = new Stack<>();
-		final Function<Stack<String>, String> createPath = stack -> stack.stream().collect(Collectors.joining("/")) + "/";
 		try (final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(out.toFile()))) {
-			Files.walkFileTree(dirToZip, new FileVisitor<Path>() {
+			Files.walkFileTree(dirToZip, new SimpleFileVisitor<Path>() {
 
-				@Override
 				public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) throws IOException {
-					stackOfDirs.push(dir.toFile().getName());
-					final String path = createPath.apply(stackOfDirs);
-					final ZipEntry zipEntry = new ZipEntry(path);
-					zipOut.putNextEntry(zipEntry);
-					return FileVisitResult.CONTINUE;
-				}
-
-				@Override
-				public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
-					final String path = String.format("%s%s", createPath.apply(stackOfDirs), file.toFile().getName());
-					final ZipEntry zipEntry = new ZipEntry(path);
-					zipOut.putNextEntry(zipEntry);
-					Files.copy(file, zipOut);
+					zipOut.putNextEntry(new ZipEntry(dirToZip.relativize(dir).toString() + "/"));
 					zipOut.closeEntry();
 					return FileVisitResult.CONTINUE;
 				}
 
-				@Override
-				public FileVisitResult visitFileFailed(final Path file, final IOException exc) throws IOException {
-					final StringWriter stringWriter = new StringWriter();
-					try (final PrintWriter printWriter = new PrintWriter(stringWriter)) {
-						exc.printStackTrace(printWriter);
-						System.err.printf("Failed visiting %s because of:\n %s\n",
-								file.toFile().getAbsolutePath(), printWriter.toString());
-					}
-					return FileVisitResult.CONTINUE;
-				}
-
-				@Override
-				public FileVisitResult postVisitDirectory(final Path dir, final IOException exc) throws IOException {
-					stackOfDirs.pop();
+				public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
+					zipOut.putNextEntry(new ZipEntry(dirToZip.relativize(file).toString()));
+					Files.copy(file, zipOut);
+					zipOut.closeEntry();
 					return FileVisitResult.CONTINUE;
 				}
 			});
