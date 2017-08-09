@@ -5,7 +5,11 @@ This tool will prepare a prebuilt mobile fullsync database you will be able to e
 Or bulk download when you mobile application is started.
 
 Usage: PreparePreBuiltDatabase Convertigo_server_endpoint fullsync_database_name ex :
-   PreparePreBuiltDatabase http://my.convertigo.server.com:28080/convertigo  myfullsyncdatabase *[prebuiltdatabase.zip]*
+   PreparePreBuiltDatabase [options] http://my.convertigo.server.com:28080/convertigo  myfullsyncdatabase [prebuiltdatabase.zip]
+
+Options are:
+  -h   --help             : shows this message
+  -ncv --no-compile-views : disables pre-indexing of all views
 
 The prebuilt database will be created in the current directory.
 
