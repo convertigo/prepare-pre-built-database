@@ -2,6 +2,7 @@ package com.twinsoft.convertigo.util;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.FileVisitResult;
@@ -10,6 +11,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -29,6 +33,7 @@ import com.couchbase.lite.javascript.JavaScriptViewCompiler;
 import com.couchbase.lite.replicator.Replication;
 import com.couchbase.lite.replicator.Replication.ReplicationStatus;
 import com.couchbase.lite.store.SQLiteStore;
+import com.couchbase.lite.util.Base64;
 
 public class PrepareCBLDatabase {
 
@@ -217,6 +222,8 @@ public class PrepareCBLDatabase {
 	 */
 	public static void zipDir(final Path dirToZip, final Path out) {
 		try (final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(out.toFile()))) {
+			StringBuilder sb = new StringBuilder();
+			
 			Files.walkFileTree(dirToZip, new SimpleFileVisitor<Path>() {
 
 				public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) throws IOException {
@@ -226,13 +233,29 @@ public class PrepareCBLDatabase {
 				}
 
 				public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
-					zipOut.putNextEntry(new ZipEntry(dirToZip.relativize(file).toString()));
-					Files.copy(file, zipOut);
+					String path = dirToZip.relativize(file).toString();
+					zipOut.putNextEntry(new ZipEntry(path));
+					DigestOutputStream digest;
+					try {
+						digest = new DigestOutputStream(zipOut, MessageDigest.getInstance("MD5"));
+					} catch (NoSuchAlgorithmException e) {
+						throw new IOException(e);
+					}
+					Files.copy(file, digest);
+					sb.append(path + "\n");
+					sb.append(file.toFile().length() + "\n");
+					sb.append(Base64.encodeToString(digest.getMessageDigest().digest(), Base64.NO_WRAP) + "\n");
 					zipOut.closeEntry();
 					return FileVisitResult.CONTINUE;
 				}
 			});
-		} catch (IOException e) {
+			
+			zipOut.putNextEntry(new ZipEntry("md5-b64.txt"));
+			OutputStreamWriter osw = new OutputStreamWriter(zipOut, "UTF-8");
+			osw.write(sb.toString());
+			osw.flush();
+			zipOut.closeEntry();
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
