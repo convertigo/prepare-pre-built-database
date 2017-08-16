@@ -156,22 +156,31 @@ public class PrepareCBLDatabase {
 	}
 	
 	@SuppressWarnings("unchecked")
-	void doCompileViews() throws CouchbaseLiteException, InterruptedException {
+	void doCompileViews() throws CouchbaseLiteException {
 		QueryOptions qo = new QueryOptions();
 		qo.setStartKey("_design/");
+		qo.setEndKey("_design/~");
 		Map<String, Object> docs = db.getAllDocs(qo);
 		
 		if (docs.containsKey("rows")) {
 			List<QueryRow> rows = (List<QueryRow>) docs.get("rows");
 			for (QueryRow row : rows) {
-				String ddoc = row.getDocumentId().substring("_design/".length());
-				Map<String, Map<String, Object>> views = (Map<String, Map<String, Object>>) db.getExistingDocument(row.getDocumentId()).getProperties().get("views");
-				if (views != null) {
-					for (Entry<String, Map<String, Object>> view : views.entrySet()) {
-						String tdViewName = ddoc + "/" + view.getKey();
-						System.out.print("Compile View : " + tdViewName + "\r");
-						compileView(tdViewName, view.getValue()).updateIndexAlone();
+				try {
+					String ddoc = row.getDocumentId().substring("_design/".length());
+					Map<String, Map<String, Object>> views = (Map<String, Map<String, Object>>) db.getExistingDocument(row.getDocumentId()).getProperties().get("views");
+					if (views != null) {
+						for (Entry<String, Map<String, Object>> view : views.entrySet()) {
+							String tdViewName = ddoc + "/" + view.getKey();
+							try {
+								System.out.print("Compile View : " + tdViewName + "\r");
+								compileView(tdViewName, view.getValue()).updateIndexAlone();
+							} catch (Exception e) {
+								System.out.println("Failed to handle the view '" + tdViewName + "' cause by: " + e);
+							}
+						}
 					}
+				} catch (Exception e) {
+					System.out.println("Failed to handle the document '" + row.getDocumentId() + "' cause by: " + e);
 				}
 			}
 		}
