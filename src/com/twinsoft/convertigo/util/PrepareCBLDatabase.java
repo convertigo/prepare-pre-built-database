@@ -14,11 +14,17 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
 
 import com.couchbase.lite.CouchbaseLiteException;
 import com.couchbase.lite.Database;
@@ -33,31 +39,50 @@ import com.couchbase.lite.javascript.JavaScriptViewCompiler;
 import com.couchbase.lite.replicator.Replication;
 import com.couchbase.lite.replicator.Replication.ReplicationStatus;
 import com.couchbase.lite.store.SQLiteStore;
+import com.couchbase.lite.support.ClearableCookieJar;
+import com.couchbase.lite.support.CouchbaseLiteHttpClientFactory;
 import com.couchbase.lite.util.Base64;
+
+import okhttp3.Call;
+import okhttp3.Cookie;
+import okhttp3.HttpUrl;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class PrepareCBLDatabase {
 
 	Manager manager;
 	Database db;
 	boolean compileViews = false;
-	
+
 	static String database_name = "manydocs";
 
 	public static void main(String[] args) throws IOException, CouchbaseLiteException {
 
-		System.out.println("PreparePreBuiltDatabase tool v1.2 (c) 2017 Convertigo");
-		
+		System.out.println("PreparePreBuiltDatabase tool v1.3 (c) 2018 Convertigo");
+
 		boolean compileViews = true;
 		boolean help = false;
+		String token = null;
 		int id = 0;
-		
+
 		for (id = 0; id < args.length; id++) {
 			String arg = args[id];
-			
+
 			if (arg.equals("--help") || arg.equals("-h")) {
 				help = true;
 			} else if (arg.equals("--no-compile-views") || arg.equals("-ncv")) {
 				compileViews = false;
+			} else if (arg.equals("--token") || arg.equals("-t")) {
+				if (++id < args.length) {
+					token = args[id];
+				} else {
+					System.out.println("Missing token value");
+					help = true;
+				}
 			} else {
 				break;
 			}
@@ -70,6 +95,7 @@ public class PrepareCBLDatabase {
 			me.compileViews = compileViews;
 			me.openDatabase();
 			Path zipPath = Paths.get(args.length >= (id + 3) ? args[id + 2] : "./fs." + database_name + ".zip");
+			me.authenticate(args[id + 0], token);
 			me.replicate(args[id + 0], zipPath);
 		} else {
 			System.out.println("This tool will prepare a prebuilt mobile fullsync database you will be able to embed in your mobile apps ");
@@ -81,9 +107,45 @@ public class PrepareCBLDatabase {
 			System.out.println("Options are:");
 			System.out.println("  -h   --help             : shows this message");
 			System.out.println("  -ncv --no-compile-views : disables pre-indexing of all views");
+			System.out.println("  -t   --token            : authentication token from the Convertigo lib_PrepareFSDatabase project");
 			System.out.println("");
 			System.out.println("The prebuilt database will be created in the current directory.");
 		}
+	}
+
+	void authenticate(String endpoint, String token) throws IOException {
+		System.out.println("token: " + token);
+		if (token == null) {
+			return;
+		}
+		RequestBody requestBody = new MultipartBody.Builder()
+				.setType(MultipartBody.FORM)
+				.addFormDataPart("__sequence", "Authenticate")
+				.addFormDataPart("token", token)
+				.build();
+
+		Request request = new Request.Builder()
+				.url(endpoint + "/projects/lib_PrepareFSDatabase/.json")
+				.post(requestBody)
+				.build();
+		SimpleCookieJar cookieJar = new SimpleCookieJar();
+		manager.setDefaultHttpClientFactory(new CouchbaseLiteHttpClientFactory(cookieJar));
+		OkHttpClient client = new OkHttpClient.Builder().cookieJar(cookieJar).build();
+		Call call = client.newCall(request);
+		Response response = call.execute();
+		String body = response.body().string();
+		ScriptEngine engine = new ScriptEngineManager().getEngineByName("nashorn");
+		try {
+			Object res = engine.eval("var o = (" + body + "); o.error ? o.error : o.ok == 'true'");
+			if (Boolean.TRUE.equals(res)) {
+				return;
+			} else {
+				System.err.println("Authentication failed: " + res);
+			}
+		} catch (ScriptException e) {
+			System.err.println("Authentication failed: " + e);
+		}
+		System.exit(1);
 	}
 
 	/**
@@ -109,8 +171,9 @@ public class PrepareCBLDatabase {
 	void replicate(String surl, Path zipPath) throws MalformedURLException {
 		URL url = new URL(surl + "/fullsync/" + database_name +"/");
 		Replication pull = db.createPullReplication(url);
+
 		pull.setContinuous(false);
-		
+
 		final long time[] = {0};
 		/*
 		Authenticator  auth = new BasicAuthenticator("","");
@@ -122,11 +185,12 @@ public class PrepareCBLDatabase {
 			public void changed(Replication.ChangeEvent event) {
 				// will be called back when the pull replication status changes
 				long now = System.currentTimeMillis();
-				if (now > time[0]) {
+				boolean stop = event.getStatus() ==  ReplicationStatus.REPLICATION_STOPPED;
+				if (now > time[0] || stop) {
 					System.out.println("Replicated : " + event.getCompletedChangeCount() + " Status : " + event.getStatus());
 					time[0] = now + 5000;
 				}
-				if (event.getStatus() ==  ReplicationStatus.REPLICATION_STOPPED) {
+				if (stop) {
 					try {						
 						Path cbldir = Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + ".cblite2").toAbsolutePath();
 						SQLiteStore store = new SQLiteStore(cbldir.toString(), manager, db);
@@ -134,11 +198,11 @@ public class PrepareCBLDatabase {
 						String rev = store.getInfo("checkpoint/" + pull.remoteCheckpointDocID());
 						store.setInfo("prebuiltrevision", rev);
 						store.close();
-						
+
 						if (compileViews) {
 							doCompileViews();
 						}
-						
+
 						System.out.print("\nZipping database ...");
 						zipDir(cbldir, zipPath);
 						System.out.println(", Database zip has been created in : " + zipPath);
@@ -154,14 +218,14 @@ public class PrepareCBLDatabase {
 		});
 		pull.start();
 	}
-	
+
 	@SuppressWarnings("unchecked")
 	void doCompileViews() throws CouchbaseLiteException {
 		QueryOptions qo = new QueryOptions();
 		qo.setStartKey("_design/");
 		qo.setEndKey("_design/~");
 		Map<String, Object> docs = db.getAllDocs(qo);
-		
+
 		if (docs.containsKey("rows")) {
 			List<QueryRow> rows = (List<QueryRow>) docs.get("rows");
 			for (QueryRow row : rows) {
@@ -185,44 +249,70 @@ public class PrepareCBLDatabase {
 			}
 		}
 	}
-    
-    View compileView(String viewName, Map<String, Object> viewProps) {
-        String language = (String) viewProps.get("language");
-        if (language == null) {
-            language = "javascript";
-        }
 
-        String mapSource = (String) viewProps.get("map");
-        if (mapSource == null) {
-            return null;
-        }
+	View compileView(String viewName, Map<String, Object> viewProps) {
+		String language = (String) viewProps.get("language");
+		if (language == null) {
+			language = "javascript";
+		}
 
-        Mapper mapBlock = View.getCompiler().compileMap(mapSource, language);
-        if (mapBlock == null) {
-            return null;
-        }
+		String mapSource = (String) viewProps.get("map");
+		if (mapSource == null) {
+			return null;
+		}
 
-        String mapID = viewName + ":" + mapSource.hashCode();
+		Mapper mapBlock = View.getCompiler().compileMap(mapSource, language);
+		if (mapBlock == null) {
+			return null;
+		}
 
-        String reduceSource = (String) viewProps.get("reduce");
-        Reducer reduceBlock = null;
-        if (reduceSource != null) {
-            reduceBlock = View.getCompiler().compileReduce(reduceSource, language);
-            if (reduceBlock == null) {
-                return null;
-            }
-            mapID += ":" + reduceSource.hashCode();
-        }
+		String mapID = viewName + ":" + mapSource.hashCode();
 
-        View view = db.getView(viewName);
-        view.setMapReduce(mapBlock, reduceBlock, mapID);
-        String collation = (String) viewProps.get("collation");
-        if ("raw".equals(collation)) {
-            view.setCollation(View.TDViewCollation.TDViewCollationRaw);
-        }
-        return view;
-    }
-    
+		String reduceSource = (String) viewProps.get("reduce");
+		Reducer reduceBlock = null;
+		if (reduceSource != null) {
+			reduceBlock = View.getCompiler().compileReduce(reduceSource, language);
+			if (reduceBlock == null) {
+				return null;
+			}
+			mapID += ":" + reduceSource.hashCode();
+		}
+
+		View view = db.getView(viewName);
+		view.setMapReduce(mapBlock, reduceBlock, mapID);
+		String collation = (String) viewProps.get("collation");
+		if ("raw".equals(collation)) {
+			view.setCollation(View.TDViewCollation.TDViewCollationRaw);
+		}
+		return view;
+	}
+
+	class SimpleCookieJar implements ClearableCookieJar {
+		List<Cookie> cookies = Collections.emptyList();
+
+		@Override
+		public void saveFromResponse(HttpUrl url, List<Cookie> cookies) {
+			System.out.println("saveFromResponse " + url + " " + cookies);
+			this.cookies = cookies;
+		}
+
+		@Override
+		public List<Cookie> loadForRequest(HttpUrl url) {
+			return cookies;
+		}
+
+		@Override
+		public void clear() {
+			cookies = Collections.emptyList();
+		}
+
+		@Override
+		public boolean clearExpired(Date date) {
+			return false;
+		}
+
+	}
+
 	/**
 	 * Zip the database directory ton one Zip File
 	 * 
@@ -232,7 +322,7 @@ public class PrepareCBLDatabase {
 	public static void zipDir(final Path dirToZip, final Path out) {
 		try (final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(out.toFile()))) {
 			StringBuilder sb = new StringBuilder();
-			
+
 			Files.walkFileTree(dirToZip, new SimpleFileVisitor<Path>() {
 
 				public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) throws IOException {
@@ -258,7 +348,7 @@ public class PrepareCBLDatabase {
 					return FileVisitResult.CONTINUE;
 				}
 			});
-			
+
 			zipOut.putNextEntry(new ZipEntry("md5-b64.txt"));
 			OutputStreamWriter osw = new OutputStreamWriter(zipOut, "UTF-8");
 			osw.write(sb.toString());

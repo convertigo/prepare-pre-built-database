@@ -1,0 +1,38 @@
+version: 2
+jobs:
+  build:
+    docker:
+    - image: circleci/openjdk:8-jdk
+    steps:
+    - restore_cache:
+        keys:
+        - v1-git-{{ .Revision }}
+        - v1-git-
+    - checkout
+    - save_cache:
+        paths:
+        - .git
+        key: v1-git-{{ .Revision }}
+    - restore_cache:
+        keys:
+        - v2-dependencies-{{ checksum "build.gradle" }}-{{ checksum ".circleci/config.yml" }}
+        - v2-dependencies-
+    - restore_cache:
+        keys:
+        - v2-build-cache-{{ .Revision }}
+        - v2-build-cache-
+    - run: gradle --stacktrace --info --refresh-dependencies $GRADLE_ARGS publish
+    - save_cache:
+        paths:
+          - ~/.gradle
+          - .gradle
+        key: v2-dependencies-{{ checksum "build.gradle" }}-{{ checksum ".circleci/config.yml" }}
+    - save_cache:
+        paths:
+        - ~/.gradle/caches/build-cache-1
+        key: v2-build-cache-{{ .Revision }}
+workflows:
+  version: 2
+  all:
+    jobs:
+    - build
