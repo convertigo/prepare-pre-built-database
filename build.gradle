@@ -1,11 +1,10 @@
 apply plugin: 'eclipse'
 apply plugin: 'java-library'
-apply plugin: 'maven-publish'
 
 compileJava.options.encoding = 'UTF-8'
 
 group 'com.convertigo.lib'
-version = '1.3-SNAPSHOT'
+version = '1.3'
 
 sourceSets {
 	main {
@@ -16,24 +15,6 @@ sourceSets {
 		}
 		resources {
 			srcDir 'src'
-		}
-	}
-}
-
-publishing {
-	publications {
-		mavenJava(MavenPublication) {
-			from components.java
-		}
-	}
-	
-	repositories {
-		maven {
-			url project.properties['c8o.m2.url']
-			credentials(AwsCredentials) {
-				accessKey project.properties['c8o.m2.ak']
-				secretKey project.properties['c8o.m2.sk']
-			}
 		}
 	}
 }

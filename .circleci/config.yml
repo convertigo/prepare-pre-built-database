@@ -21,7 +21,7 @@ jobs:
         keys:
         - v2-build-cache-{{ .Revision }}
         - v2-build-cache-
-    - run: gradle --stacktrace --info --refresh-dependencies $GRADLE_ARGS publish
+    - run: gradle --stacktrace --info --refresh-dependencies $GRADLE_ARGS jar
     - save_cache:
         paths:
           - ~/.gradle
@@ -31,8 +31,33 @@ jobs:
         paths:
         - ~/.gradle/caches/build-cache-1
         key: v2-build-cache-{{ .Revision }}
+    - persist_to_workspace:
+        root: build
+        paths:
+        - libs/*
+  release:
+    docker:
+    - image: cibuilds/github:latest
+    steps:
+    - attach_workspace:
+        at: ./libs
+    - run: |
+        VERSION=$(ls libs/*.jar | sed -n -e "s/.*-\(.*\)\.jar/\1/p")
+        echo "VERSION=$VERSION"
+        ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./libs/
 workflows:
   version: 2
   all:
     jobs:
-    - build
+    - build:
+        filters:
+          tags:
+            only: /^\d+\..*$/
+    - release:
+        requires:
+        - build
+        filters:
+          branches:
+            ignore: /.*/
+          tags:
+            only: /^\d+\..*$/
