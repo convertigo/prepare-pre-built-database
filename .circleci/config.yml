@@ -26,14 +26,16 @@ jobs:
     - persist_to_workspace:
         root: build
         paths:
-        - libs/*
+        - libs
   release:
     docker:
     - image: cibuilds/github:latest
     steps:
     - attach_workspace:
-        at: ./libs
+        at: .
     - run: |
+        pwd
+        ls -lh
         VERSION=$(ls libs/*.jar | sed -n -e "s/.*-\(.*\)\.jar/\1/p")
         echo "VERSION=$VERSION"
         ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./libs/
