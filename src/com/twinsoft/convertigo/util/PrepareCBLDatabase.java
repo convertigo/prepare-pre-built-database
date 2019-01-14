@@ -19,6 +19,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -42,6 +44,7 @@ import com.couchbase.lite.store.SQLiteStore;
 import com.couchbase.lite.support.ClearableCookieJar;
 import com.couchbase.lite.support.CouchbaseLiteHttpClientFactory;
 import com.couchbase.lite.util.Base64;
+import com.couchbase.lite.util.Log;
 
 import okhttp3.Call;
 import okhttp3.Cookie;
@@ -57,11 +60,11 @@ public class PrepareCBLDatabase {
 	Manager manager;
 	Database db;
 	boolean compileViews = false;
+	OkHttpClient client;
 
 	static String database_name = "manydocs";
 
-	public static void main(String[] args) throws IOException, CouchbaseLiteException {
-
+	public static void main(String[] args) throws Exception {
 		System.out.println("PreparePreBuiltDatabase tool v1.3 (c) 2018 Convertigo");
 
 		boolean compileViews = true;
@@ -92,11 +95,16 @@ public class PrepareCBLDatabase {
 			View.setCompiler(new JavaScriptViewCompiler());
 			PrepareCBLDatabase me = new PrepareCBLDatabase();
 			database_name = args[id + 1];
+			System.out.println("database: " + database_name);
 			me.compileViews = compileViews;
 			me.openDatabase();
 			Path zipPath = Paths.get(args.length >= (id + 3) ? args[id + 2] : "./fs." + database_name + ".zip");
-			me.authenticate(args[id + 0], token);
-			me.replicate(args[id + 0], zipPath);
+			try {
+				me.authenticate(args[id + 0], token);
+				me.replicate(args[id + 0], zipPath);
+			} finally {
+				me.logout(args[id + 0]);
+			}
 		} else {
 			System.out.println("This tool will prepare a prebuilt mobile fullsync database you will be able to embed in your mobile apps ");
 			System.out.println("Or bulk download when you mobile application is started.");
@@ -110,6 +118,20 @@ public class PrepareCBLDatabase {
 			System.out.println("  -t   --token            : authentication token from the Convertigo lib_PrepareFSDatabase project");
 			System.out.println("");
 			System.out.println("The prebuilt database will be created in the current directory.");
+		}
+	}
+
+	private void logout(String endpoint) throws IOException {
+		if (client != null) {
+			RequestBody requestBody = new MultipartBody.Builder()
+				.setType(MultipartBody.FORM)
+				.addFormDataPart("__sequence", "Logout")
+				.build();
+			Request request = new Request.Builder()
+				.url(endpoint + "/projects/lib_PrepareFSDatabase/.json")
+				.post(requestBody)
+				.build();
+			client.newCall(request).execute();
 		}
 	}
 
@@ -128,9 +150,6 @@ public class PrepareCBLDatabase {
 				.url(endpoint + "/projects/lib_PrepareFSDatabase/.json")
 				.post(requestBody)
 				.build();
-		SimpleCookieJar cookieJar = new SimpleCookieJar();
-		manager.setDefaultHttpClientFactory(new CouchbaseLiteHttpClientFactory(cookieJar));
-		OkHttpClient client = new OkHttpClient.Builder().cookieJar(cookieJar).build();
 		Call call = client.newCall(request);
 		Response response = call.execute();
 		String body = response.body().string();
@@ -160,6 +179,13 @@ public class PrepareCBLDatabase {
 		manager.setStorageType("SQLite");
 		System.out.println("Database technology used : ");
 		db = manager.getDatabase(database_name);
+		Log.enableLogging(Log.TAG, Log.ASSERT);
+		Logger logger = java.util.logging.Logger.getLogger("com.couchbase.lite");
+		logger.setLevel(Level.OFF);
+		
+		SimpleCookieJar cookieJar = new SimpleCookieJar();
+		manager.setDefaultHttpClientFactory(new CouchbaseLiteHttpClientFactory(cookieJar));
+		client = new OkHttpClient.Builder().cookieJar(cookieJar).build();
 	}
 
 	/**
@@ -173,8 +199,9 @@ public class PrepareCBLDatabase {
 		Replication pull = db.createPullReplication(url);
 
 		pull.setContinuous(false);
-
+		final long tsStart = System.currentTimeMillis();
 		final long time[] = {0};
+		final long count[] = {0};
 		/*
 		Authenticator  auth = new BasicAuthenticator("","");
 		pull.setAuthenticator(auth);
@@ -187,25 +214,37 @@ public class PrepareCBLDatabase {
 				long now = System.currentTimeMillis();
 				boolean stop = event.getStatus() ==  ReplicationStatus.REPLICATION_STOPPED;
 				if (now > time[0] || stop) {
-					System.out.println("Replicated : " + event.getCompletedChangeCount() + " Status : " + event.getStatus());
+					System.out.println("[" + (count[0]++) + "] Replicated : " + event.getCompletedChangeCount() + " Status : " + event.getStatus());
 					time[0] = now + 5000;
 				}
 				if (stop) {
-					try {						
+					try {
+						long tsStop = now;
 						Path cbldir = Paths.get("./data/data/com.couchbase.lite.test/files/cblite/" + database_name + ".cblite2").toAbsolutePath();
 						SQLiteStore store = new SQLiteStore(cbldir.toString(), manager, db);
 						store.open();
 						String rev = store.getInfo("checkpoint/" + pull.remoteCheckpointDocID());
 						store.setInfo("prebuiltrevision", rev);
 						store.close();
-
+						
+						long tsView = 0;
 						if (compileViews) {
 							doCompileViews();
+							tsView = System.currentTimeMillis();
 						}
-
+						
+						
+						
 						System.out.print("\nZipping database ...");
 						zipDir(cbldir, zipPath);
+						long tsZip = System.currentTimeMillis();
+						
 						System.out.println(", Database zip has been created in : " + zipPath);
+						System.out.println("Replication in " + (tsStop - tsStart) / 1000 + "s.");
+						if (tsView > 0) {
+							System.out.println("Compile view in " + (tsView - tsStop) / 1000 + "s.");
+						}
+						System.out.println("Zip in " + (tsZip - tsView) / 1000 + "s.");
 						System.out.println("");
 						System.out.println("Copy this file to a repository accessed by an HTTP server, For example copy the file in a convertigo projet and");
 						System.out.println("Deploy the project on a Convertigo server.");
