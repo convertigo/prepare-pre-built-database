@@ -62,7 +62,8 @@ public class PrepareCBLDatabase {
 	boolean compileViews = false;
 	OkHttpClient client;
 
-	static String database_name = "manydocs";
+	String database_name = "manydocs";
+	String endpoint;
 
 	public static void main(String[] args) throws Exception {
 		System.out.println("PreparePreBuiltDatabase tool v1.3 (c) 2018 Convertigo");
@@ -94,16 +95,19 @@ public class PrepareCBLDatabase {
 		if (!help && args.length >= 2 + id) {
 			View.setCompiler(new JavaScriptViewCompiler());
 			PrepareCBLDatabase me = new PrepareCBLDatabase();
-			database_name = args[id + 1];
-			System.out.println("database: " + database_name);
+			me.database_name = args[id + 1];
+			me.endpoint = args[id + 0];
+			System.out.println("database: " + me.database_name);
 			me.compileViews = compileViews;
 			me.openDatabase();
-			Path zipPath = Paths.get(args.length >= (id + 3) ? args[id + 2] : "./fs." + database_name + ".zip");
+			Path zipPath = Paths.get(args.length >= (id + 3) ? args[id + 2] : "./fs." + me.database_name + ".zip");
 			try {
-				me.authenticate(args[id + 0], token);
-				me.replicate(args[id + 0], zipPath);
-			} finally {
-				me.logout(args[id + 0]);
+				me.authenticate(token);
+				me.replicate(zipPath);
+			} catch (Exception e) {
+				System.err.println("Do a Logout due to an exception: " + e.getMessage());
+				me.logout();
+				throw e;
 			}
 		} else {
 			System.out.println("This tool will prepare a prebuilt mobile fullsync database you will be able to embed in your mobile apps ");
@@ -121,7 +125,7 @@ public class PrepareCBLDatabase {
 		}
 	}
 
-	private void logout(String endpoint) throws IOException {
+	private void logout() throws IOException {
 		if (client != null) {
 			RequestBody requestBody = new MultipartBody.Builder()
 				.setType(MultipartBody.FORM)
@@ -135,7 +139,7 @@ public class PrepareCBLDatabase {
 		}
 	}
 
-	void authenticate(String endpoint, String token) throws IOException {
+	void authenticate(String token) throws IOException {
 		System.out.println("token: " + token);
 		if (token == null) {
 			return;
@@ -166,13 +170,7 @@ public class PrepareCBLDatabase {
 		}
 		System.exit(1);
 	}
-
-	/**
-	 * Just open the database that will receive our pre-built data...
-	 * 
-	 * @throws IOException
-	 * @throws CouchbaseLiteException
-	 */
+	
 	void openDatabase() throws IOException, CouchbaseLiteException {
 		JavaContext context = new JavaContext();
 		manager = new Manager(context, Manager.DEFAULT_OPTIONS);
@@ -187,25 +185,15 @@ public class PrepareCBLDatabase {
 		manager.setDefaultHttpClientFactory(new CouchbaseLiteHttpClientFactory(cookieJar));
 		client = new OkHttpClient.Builder().cookieJar(cookieJar).build();
 	}
-
-	/**
-	 * Replicate the data base from the server..
-	 * 
-	 * @param surl
-	 * @throws MalformedURLException
-	 */
-	void replicate(String surl, Path zipPath) throws MalformedURLException {
-		URL url = new URL(surl + "/fullsync/" + database_name +"/");
+	
+	void replicate(Path zipPath) throws MalformedURLException {
+		URL url = new URL(endpoint + "/fullsync/" + database_name +"/");
 		Replication pull = db.createPullReplication(url);
 
 		pull.setContinuous(false);
 		final long tsStart = System.currentTimeMillis();
 		final long time[] = {0};
 		final long count[] = {0};
-		/*
-		Authenticator  auth = new BasicAuthenticator("","");
-		pull.setAuthenticator(auth);
-		 */
 
 		pull.addChangeListener(new Replication.ChangeListener() {
 			@Override
@@ -251,6 +239,10 @@ public class PrepareCBLDatabase {
 					} catch (Exception e) {
 						System.err.println("Failed to replicate and prepare the zip file.");
 						e.printStackTrace();
+					} finally {
+						try {
+							logout();
+						} catch (Exception e) {}
 					}
 				}
 			}
