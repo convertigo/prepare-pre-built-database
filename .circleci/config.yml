@@ -13,7 +13,7 @@ jobs:
         keys:
         - v2-build-cache-{{ .Revision }}
         - v2-build-cache-
-    - run: gradle --stacktrace --info --refresh-dependencies $GRADLE_ARGS jar
+    - run: gradle ./gradlew --no-daemon --stacktrace --info $GRADLE_ARGS jar
     - save_cache:
         paths:
           - ~/.gradle

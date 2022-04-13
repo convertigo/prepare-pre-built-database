@@ -24,9 +24,7 @@ import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
+import org.codehaus.jettison.json.JSONObject;
 
 import com.couchbase.lite.CouchbaseLiteException;
 import com.couchbase.lite.Database;
@@ -66,7 +64,7 @@ public class PrepareCBLDatabase {
 	String endpoint;
 
 	public static void main(String[] args) throws Exception {
-		System.out.println("PreparePreBuiltDatabase tool v1.3 (c) 2018 Convertigo");
+		System.out.println("PreparePreBuiltDatabase tool v1.4 (c) 2022 Convertigo");
 
 		boolean compileViews = true;
 		boolean help = false;
@@ -157,15 +155,16 @@ public class PrepareCBLDatabase {
 		Call call = client.newCall(request);
 		Response response = call.execute();
 		String body = response.body().string();
-		ScriptEngine engine = new ScriptEngineManager().getEngineByName("nashorn");
 		try {
-			Object res = engine.eval("var o = (" + body + "); o.error ? o.error : o.ok == 'true'");
-			if (Boolean.TRUE.equals(res)) {
+			JSONObject obj = new JSONObject(body);
+			if (obj.has("ok") && "true".equals(obj.get("ok"))) {
 				return;
+			} else if (obj.has("error")) {
+				System.err.println("Authentication failed: " + obj.get("error"));
 			} else {
-				System.err.println("Authentication failed: " + res);
+				System.err.println("Authentication failed: " + obj);
 			}
-		} catch (ScriptException e) {
+		} catch (Exception e) {
 			System.err.println("Authentication failed: " + e);
 		}
 		System.exit(1);
