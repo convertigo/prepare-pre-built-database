@@ -19,6 +19,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
@@ -63,8 +64,13 @@ public class PrepareCBLDatabase {
 	String database_name = "manydocs";
 	String endpoint;
 
+	/**
+	 * default to 5 minutes timeout for the Couchbase Lite replication
+	 */
+	private static int TIMEOUT = 300;
+
 	public static void main(String[] args) throws Exception {
-		System.out.println("PreparePreBuiltDatabase tool v1.4 (c) 2022 Convertigo");
+		System.out.println("PreparePreBuiltDatabase tool v1.5 (c) 2024 Convertigo");
 
 		boolean compileViews = true;
 		boolean help = false;
@@ -83,6 +89,18 @@ public class PrepareCBLDatabase {
 					token = args[id];
 				} else {
 					System.out.println("Missing token value");
+					help = true;
+				}
+			} else if (arg.equals("--socket-timeout") || arg.equals("-st")) {
+				if (++id < args.length) {
+					try {
+						TIMEOUT = Integer.parseInt(args[id]);
+					} catch (Exception e) {
+						System.out.println("Invalid timeout value");
+						help = true;
+					}
+				} else {
+					System.out.println("Missing timeout value");
 					help = true;
 				}
 			} else {
@@ -118,6 +136,7 @@ public class PrepareCBLDatabase {
 			System.out.println("  -h   --help             : shows this message");
 			System.out.println("  -ncv --no-compile-views : disables pre-indexing of all views");
 			System.out.println("  -t   --token            : authentication token from the Convertigo lib_PrepareFSDatabase project");
+			System.out.println("  -st  --socket-timeout   : override the default timeout (300s) for the Couchbase Lite replication");
 			System.out.println("");
 			System.out.println("The prebuilt database will be created in the current directory.");
 		}
@@ -177,12 +196,27 @@ public class PrepareCBLDatabase {
 		System.out.println("Database technology used : ");
 		db = manager.getDatabase(database_name);
 		Log.enableLogging(Log.TAG, Log.ASSERT);
-		Logger logger = java.util.logging.Logger.getLogger("com.couchbase.lite");
-		logger.setLevel(Level.OFF);
 		
+		Logger logger = java.util.logging.Logger.getLogger("com.couchbase.lite");
+		logger.setLevel(Level.WARNING);
+
+		// Override CBL timeout (default 40s)
+		System.out.println("Override CouchBaseLite timeouts to " + TIMEOUT + "s");
+		CouchbaseLiteHttpClientFactory.DEFAULT_READ_TIMEOUT = TIMEOUT;
+		CouchbaseLiteHttpClientFactory.DEFAULT_WRITE_TIMEOUT = TIMEOUT;
+		CouchbaseLiteHttpClientFactory.DEFAULT_CONNECTION_TIMEOUT_SECONDS = TIMEOUT;
+		CouchbaseLiteHttpClientFactory.DEFAULT_SO_TIMEOUT_SECONDS = TIMEOUT;
+
 		SimpleCookieJar cookieJar = new SimpleCookieJar();
 		manager.setDefaultHttpClientFactory(new CouchbaseLiteHttpClientFactory(cookieJar));
-		client = new OkHttpClient.Builder().cookieJar(cookieJar).build();
+		
+		client = new OkHttpClient.Builder()
+				.cookieJar(cookieJar)
+				.connectTimeout(TIMEOUT, TimeUnit.SECONDS)
+				.readTimeout(TIMEOUT, TimeUnit.SECONDS)
+				.writeTimeout(TIMEOUT, TimeUnit.SECONDS)
+				.callTimeout(TIMEOUT, TimeUnit.SECONDS)
+				.build();
 	}
 	
 	void replicate(Path zipPath) throws MalformedURLException {
