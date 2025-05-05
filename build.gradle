@@ -4,7 +4,7 @@ apply plugin: 'java-library'
 compileJava.options.encoding = 'UTF-8'
 
 group 'com.convertigo.lib'
-version = '1.5'
+version = '1.6'
 
 sourceSets {
 	main {
@@ -24,10 +24,10 @@ repositories {
 }
 
 dependencies {
-	implementation 'com.couchbase.lite:couchbase-lite-java:1.4.0'
-	implementation 'com.couchbase.lite:couchbase-lite-java-javascript:1.4.0'
-	implementation 'com.couchbase.lite:couchbase-lite-java-sqlcipher:1.4.0'
-	implementation 'com.couchbase.lite:couchbase-lite-java-javascript:1.4.0'
+	implementation 'com.couchbase.lite:couchbase-lite-java:1.4.4'
+	implementation 'com.couchbase.lite:couchbase-lite-java-javascript:1.4.4'
+	implementation 'com.couchbase.lite:couchbase-lite-java-sqlcipher:1.4.4'
+	implementation 'com.couchbase.lite:couchbase-lite-java-javascript:1.4.4'
 	implementation 'org.codehaus.jettison:jettison:1.4.1'
 	implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
